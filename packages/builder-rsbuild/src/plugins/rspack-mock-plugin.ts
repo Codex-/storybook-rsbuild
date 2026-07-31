@@ -42,6 +42,8 @@ interface ResolvedMock extends ExtractedMock {
 export class RspackMockPlugin {
   private readonly options: RspackMockPluginOptions
   private mockMap: Map<string, ResolvedMock> = new Map()
+  private candidateSpecifiers: Set<string> = new Set()
+  private lastPreviewMtime: number | undefined
 
   constructor(options: RspackMockPluginOptions) {
     if (!options.previewConfigPath) {
@@ -54,13 +56,36 @@ export class RspackMockPlugin {
     const logger = compiler.getInfrastructureLogger(PLUGIN_NAME)
 
     const updateMocks = () => {
+      const mTimePreviewConfig = this.getPreviewConfigMtime(compiler)
+      if (
+        this.lastPreviewMtime !== undefined &&
+        mTimePreviewConfig !== undefined &&
+        mTimePreviewConfig === this.lastPreviewMtime
+      ) {
+        return // unchanged
+      }
+
+      const resolved = this.extractAndResolveMocks(compiler)
       this.mockMap = new Map(
-        this.extractAndResolveMocks(compiler).flatMap((mock) => [
+        resolved.flatMap((mock) => [
           [normalizePath(mock.absolutePath), mock],
           [normalizePath(mock.absolutePath.replace(/\.[^.]+$/, '')), mock],
         ]),
       )
-      logger.info(`Mock map updated with ${this.mockMap.size / 2} mocks.`)
+      // TODO: `mock.path` is not the specifier the user wrote. `extractMockCalls`
+      // strips the extension when the declared specifier's basename matches the
+      // resolved file's basename, so `sb.mock('pkg/dist/index.js')` is stored as
+      // `pkg/dist/index` while `resource.request` keeps the `.js`. The pre-filter
+      // below then misses that request and silently skips a mock it was never meant
+      // to drop. Register the extension-bearing form here as well.
+      // (builder-webpack5 has the same bug: webpack-mock-plugin.ts:86 on `next`.)
+      // See https://github.com/rstackjs/storybook-rsbuild/pull/524#discussion_r3688976092
+      this.candidateSpecifiers = new Set(resolved.map((mock) => mock.path))
+      this.lastPreviewMtime = mTimePreviewConfig
+
+      if (resolved.length > 0) {
+        logger.info(`Mock map updated with ${resolved.length} mocks.`)
+      }
     }
 
     compiler.hooks.beforeRun.tap(PLUGIN_NAME, updateMocks)
@@ -68,10 +93,22 @@ export class RspackMockPlugin {
 
     new rspack.NormalModuleReplacementPlugin(/.*/, (resource) => {
       try {
+        // Skip the resolution probe entirely when no `sb.mock()` calls are declared —
+        // otherwise every request in the module graph pays for a `require.resolve`-style
+        // lookup for no benefit. See https://github.com/storybookjs/storybook/issues/33778.
+        if (this.mockMap.size === 0) {
+          return
+        }
+
         const path = resource.request
         const importer = resource.context
 
         const isExternal = getIsExternal(path, importer)
+        // Early filter only for external specifiers. Relative/local specifiers still need
+        // resolution to compare against the absolute paths stored in `mockMap`.
+        if (isExternal && !this.candidateSpecifiers.has(path)) {
+          return
+        }
         const absolutePath = isExternal
           ? resolveExternalModule(path, importer)
           : resolveWithExtensions(path, importer)
@@ -100,6 +137,16 @@ export class RspackMockPlugin {
         }
       }
     })
+  }
+
+  private getPreviewConfigMtime(compiler: Rspack.Compiler): number | undefined {
+    try {
+      const fs = compiler.inputFileSystem as any
+      const stat = fs.statSync?.(this.options.previewConfigPath)
+      return stat?.mtime?.getTime?.()
+    } catch {
+      return undefined
+    }
   }
 
   private extractAndResolveMocks(compiler: Rspack.Compiler): ResolvedMock[] {
