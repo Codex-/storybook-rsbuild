@@ -29,7 +29,8 @@ export class RspackInjectMockerRuntimePlugin {
 
   apply(compiler: Rspack.Compiler) {
     const HtmlPlugin = this.getHtmlPlugin(compiler)
-    if (!HtmlPlugin || typeof HtmlPlugin.getHooks !== 'function') {
+    const getHtmlHooks = HtmlPlugin?.getCompilationHooks ?? HtmlPlugin?.getHooks
+    if (typeof getHtmlHooks !== 'function') {
       compiler
         .getInfrastructureLogger(PLUGIN_NAME)
         .warn('HTML plugin is not available. Cannot inject mocker runtime.')
@@ -37,7 +38,7 @@ export class RspackInjectMockerRuntimePlugin {
     }
 
     compiler.hooks.compilation.tap(PLUGIN_NAME, (compilation) => {
-      HtmlPlugin.getHooks(compilation).beforeAssetTagGeneration.tapAsync(
+      getHtmlHooks(compilation).beforeAssetTagGeneration.tapAsync(
         PLUGIN_NAME,
         (data, cb) => {
           try {
