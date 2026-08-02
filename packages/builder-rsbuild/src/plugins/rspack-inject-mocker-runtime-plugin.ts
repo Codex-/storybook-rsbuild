@@ -52,16 +52,19 @@ export class RspackInjectMockerRuntimePlugin {
               )
             }
 
-            // Emit and reference the runtime once per compilation. Re-emitting an
-            // identical asset on every rebuild triggers spurious rebuild loops in dev.
+            // Emit once per compilation, because re-emitting an identical asset triggers
+            // spurious rebuild loops in dev.
             // See https://github.com/storybookjs/storybook/pull/33169.
             if (!compilation.getAsset(runtimeAssetName)) {
               compilation.emitAsset(
                 runtimeAssetName,
                 new Sources.RawSource(runtimeScriptContent),
               )
-              data.assets.js.unshift(runtimeAssetName)
             }
+
+            // Reference it from every page though. This hook runs once per HTML page, each
+            // with its own asset list, and each page needs the runtime before its scripts.
+            data.assets.js.unshift(runtimeAssetName)
 
             cb(null, data)
           } catch (error) {
