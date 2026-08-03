@@ -1,5 +1,7 @@
 packages:
-  - packages/**
+  # `packages/*`, not `packages/**`: prebundle emits a real package.json into
+  # packages/builder-rsbuild/compiled/, which `**` would pick up as a workspace member.
+  - packages/*
   - sandboxes/**
   - scripts/**
   - website
