@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import type { Rspack } from '@rsbuild/core'
 import { rspack } from '@rsbuild/core'
 import { describe, expect, it } from '@rstest/core'
+import { resolve as resolvePosix } from 'pathe'
 import { RspackMockPlugin } from '../../src/plugins/rspack-mock-plugin'
 
 // extractMockCalls sends telemetry when it finds mocks.
@@ -141,7 +142,7 @@ describe('RspackMockPlugin', () => {
     replaceResource(resource)
 
     expect(resource.request).toBe(
-      resolve(fixtureDir, '__mocks__/mocked-module.js'),
+      resolvePosix(fixtureDir, '__mocks__/mocked-module.js'),
     )
   })
 
