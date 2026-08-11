@@ -40,7 +40,7 @@ function applyPlugin(
   // Drives the mtime the plugin sees, standing in for the compiler's cached file system.
   let previewMtime = 1_000
 
-  const compiler = {
+  const compilerStub = {
     context: fixtureDir,
     inputFileSystem: {
       statSync: () => ({ mtime: new Date(previewMtime) }),
@@ -60,7 +60,11 @@ function applyPlugin(
         warn: (message: string) => warnMessages.push(message),
         debug: (message: string) => debugMessages.push(message),
       }) as unknown as InfrastructureLogger,
-  } satisfies Partial<Rspack.Compiler> as Rspack.Compiler
+  } satisfies Partial<Rspack.Compiler>
+
+  // `Rspack.Compiler` declares a private field, so it is nominally typed and no object literal
+  // can be asserted to it directly. The `satisfies` above is what type-checks the stub.
+  const compiler = compilerStub as unknown as Rspack.Compiler
 
   const OriginalPlugin = rspack.NormalModuleReplacementPlugin
   ;(rspack as any).NormalModuleReplacementPlugin = class {
